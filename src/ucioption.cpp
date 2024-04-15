@@ -88,6 +88,7 @@ void on_variant_change(const Option &o) {
     // Variant initialization
     on_variant_set(o);
 
+    std::cout << "testing\n";
     const Variant* v = variants.find(o)->second;
     // Do not send setup command for known variants
     if (standard_variants.find(o) != standard_variants.end())
@@ -107,9 +108,15 @@ void on_variant_change(const Option &o) {
                       << sync_endl;
             return;
         }
+
+        // Set custom rank for musketeer variant
+        int rank = (int)v->maxRank + 1;
+        if (v->commitGates)
+            rank = 10;
+
         // Send setup command
         sync_cout << "setup (" << v->pieceToCharTable << ") "
-                  << v->maxFile + 1 << "x" << v->maxRank + 1
+                  << v->maxFile + 1 << "x" << rank
                   << "+" << pocketsize << "_" << v->variantTemplate
                   << " " << v->startFen
                   << sync_endl;
@@ -180,7 +187,7 @@ void init(OptionsMap& o) {
 
   constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
 
-  o["Debug Log File"]        << Option("", on_logger);
+  o["Debug Log File"]        << Option("F:\\log.txt", on_logger);
   o["Threads"]               << Option(1, 1, 512, on_threads);
   o["Hash"]                  << Option(16, 1, MaxHashMB, on_hash_size);
   o["Clear Hash"]            << Option(on_clear_hash);

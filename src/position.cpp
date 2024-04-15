@@ -273,7 +273,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
   // 1. Piece placement
   while ((ss >> token) && !isspace(token))
   {      
-    if (isdigit(token) && (!commit_gates() || (rank != 0 && rank != max_rank() + 2)))
+      if (isdigit(token))
       {
 #ifdef LARGEBOARDS
           if (isdigit(ss.peek()))
@@ -287,13 +287,17 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 
       else if (token == '/')
       { 
-          if(!commit_gates() || (rank != 0 && rank <= max_rank())) sq += 2 * SOUTH + (FILE_MAX - max_file()) * EAST;
-          ++rank;
-          commitFile = 0;
+          if (commit_gates() && (rank == 0 || rank == max_rank() + 1))
+          {
+              ++rank;
+              commitFile = 0;
+          }
+          else
+              sq = SQ_A1 + --r * NORTH;
           if (!is_ok(sq))
               break;
       }
-      else if(token == '*') ++commitFile;
+
       // Stop before pieces in hand
       else if (token == '[')
           break;
@@ -305,9 +309,14 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
       // Wall square
       else if (token == '*')
       {
-          st->wallSquares |= sq;
-          byTypeBB[ALL_PIECES] |= sq;
-          ++sq;
+          if (commit_gates())
+              ++commitFile;
+          else
+          {
+              st->wallSquares |= sq;
+              byTypeBB[ALL_PIECES] |= sq;
+              ++sq;
+          }
       }
 
       else if ((idx = piece_to_char().find(token)) != string::npos || (idx = piece_to_char_synonyms().find(token)) != string::npos)
@@ -315,13 +324,13 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
           if (ss.peek() == '~')
               ss >> token;
 
-          if(v->commitGates && (rank == 0 || rank == max_rank() + 2)){
-            commit_piece(Piece(idx), File(commitFile));
-            ++commitFile;
+          if (commit_gates() && (rank == 0 || rank == max_rank() + 2)) {
+              commit_piece(Piece(idx), File(commitFile));
+              ++commitFile;
           }
-          else{
-            put_piece(Piece(idx), sq, token == '~');
-            ++sq;
+          else {
+              put_piece(Piece(idx), sq, token == '~');
+              ++sq;
           }
       }
 
@@ -331,14 +340,6 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
           ss >> token;
           put_piece(make_piece(color_of(Piece(idx)), promoted_piece_type(type_of(Piece(idx)))), sq, true, Piece(idx));
           ++sq;
-          if(v->commitGates && (rank == 0 || rank == max_rank() + 2)){
-            commit_piece(Piece(idx), File(commitFile));
-            ++commitFile;
-          }
-          else {
-            put_piece(make_piece(color_of(Piece(idx)), promoted_piece_type(type_of(Piece(idx)))), sq, true, Piece(idx));
-            ++sq;
-          }
       }
   }
   // Pieces in hand
@@ -701,9 +702,9 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
 
   int emptyCnt;
   std::ostringstream ss;
-  if(commit_gates()){
-      for(File f = FILE_A; f < max_file(); ++f){
-          if(has_committed_piece(BLACK, f)) ss << piece_to_char()[make_piece(BLACK, committedGates[BLACK][f])];
+  if (commit_gates()) {
+      for (File f = FILE_A; f < max_file(); ++f) {
+          if (has_committed_piece(BLACK, f)) ss << piece_to_char()[make_piece(BLACK, committedGates[BLACK][f])];
           else ss << "*";
       }
       ss << "/";
@@ -741,13 +742,15 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
       if (r > RANK_1)
           ss << '/';
   }
-  if(commit_gates()){
+
+  if (commit_gates()) {
       ss << "/";
-      for(File f = FILE_A; f <= max_file(); ++f){
-          if(has_committed_piece(WHITE, f)) ss << piece_to_char()[make_piece(WHITE, committedGates[WHITE][f])];
+      for (File f = FILE_A; f <= max_file(); ++f) {
+          if (has_committed_piece(WHITE, f)) ss << piece_to_char()[make_piece(WHITE, committedGates[WHITE][f])];
           else ss << "*";
       }
   }
+
   // SFEN
   if (sfen)
   {
@@ -1980,20 +1983,22 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       st->materialKey ^= Zobrist::psq[gating_piece][pieceCount[gating_piece]];
       st->nonPawnMaterial[us] += PieceValue[MG][gating_piece];
   }
-  if(st->removedGatingType > NO_PIECE_TYPE){
+
+  if (st->removedGatingType > NO_PIECE_TYPE) {
     commit_piece(piece_on(from), file_of(from));
   }
 
   // Musketeer gating
-  if(commit_gates()){
+  if (commit_gates()) {
       Rank r = rank_of(from);
-      if(r == RANK_1 && has_committed_piece(WHITE, file_of(from))){
+      if (r == RANK_1 && has_committed_piece(WHITE, file_of(from))){
           st->removedGatingType = drop_committed_piece(WHITE, file_of(from));
-      } else if(r == max_rank() && has_committed_piece(BLACK, file_of(from))){
+      } else if (r == max_rank() && has_committed_piece(BLACK, file_of(from))) {
           st->removedGatingType = drop_committed_piece(BLACK, file_of(from));
       }
       else st->removedGatingType = NO_PIECE_TYPE;
   }
+
   // Remove gates
   if (gating())
   {
@@ -2218,7 +2223,7 @@ void Position::undo_move(Move m) {
       st->gatesBB[us] |= gating_square(m);
   }
 
-  if(st->removedGatingType > NO_PIECE_TYPE){
+  if (st->removedGatingType > NO_PIECE_TYPE) {
       commit_piece(piece_on(from), file_of(from));
   }
 
@@ -2315,9 +2320,9 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
   Piece castlingKingPiece = piece_on(Do ? from : to);
   Piece castlingRookPiece = piece_on(Do ? rfrom : rto);
 
-  if(commit_gates()){
-      if(has_committed_piece(us, file_of(rfrom))){
-        drop_committed_piece(us, file_of(rfrom));
+  if (commit_gates()) {
+      if (has_committed_piece(us, file_of(rfrom))) {
+          drop_committed_piece(us, file_of(rfrom));
       }
   }
 
